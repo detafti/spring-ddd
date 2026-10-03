@@ -8,7 +8,7 @@ The running example is **Kestrel Supply**, a fictional online retailer of home a
 
 | # | Module | What you get |
 |---|--------|--------------|
-| 1 | Strategic design workshop | Subdomains, bounded contexts, context map, ubiquitous language |
+| 1 | [Strategic design workshop](docs/strategic-design/README.md) | Subdomains, bounded contexts, context map, ubiquitous language |
 | 2 | Tactical DDD in Spring Boot | One bounded context with aggregates, value objects, domain events and repositories, laid out in Clean Architecture and guarded by ArchUnit |
 | 3 | Integrating contexts | A second context connected through domain events, an anti-corruption layer and the outbox pattern |
 | 4 | Design review practice | A reusable checklist applied to a real system |
