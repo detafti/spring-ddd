@@ -2,7 +2,7 @@
 
 A hands-on path to designing real systems with **Domain-Driven Design** and **Clean Architecture** in **Java + Spring Boot**.
 
-The running example is **Kestrel Supply**, a fictional online retailer of home and kitchen goods that ships from its own warehouses. Every module builds on the same domain, so the strategic decisions made early show up in the code later.
+The running example is **Northlane HR**, a fictional HR platform for companies with staff in several European countries. Every module builds on the same domain, so the strategic decisions made early show up in the code later.
 
 ## Learning path
 

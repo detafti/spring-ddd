@@ -6,7 +6,7 @@ Bounded contexts never live alone. A **context map** shows how they relate: who 
 
 In every relationship one side is **upstream (U)** and the other **downstream (D)**. Upstream means *"my model influences yours"*: if the upstream changes its API or events, the downstream has to adapt.
 
-> **This is about model influence, not data flow.** Data often flows both ways. Ordering sends `OrderPlaced` to Fulfilment *and* receives `ShipmentDispatched` back. The question to ask is: *"if this side changes, who has to change with it?"*
+> **This is about model influence, not data flow.** Northlane *sends* data to payroll providers, yet the providers are **upstream**: they dictate the file format, and when they change it, Northlane has to change. The question to ask is: *"if this side changes, who has to change with it?"*
 
 ## The patterns
 
@@ -18,117 +18,101 @@ In every relationship one side is **upstream (U)** and the other **downstream (D
 | **Conformist** | Downstream adopts upstream's model as it is. | Upstream will not change for you, and its model is good enough. Cheap. |
 | **Anti-Corruption Layer (ACL)** | Downstream translates upstream's model into its own. | Upstream's model is foreign or messy and would pollute yours. Essential for protecting a core domain. |
 | **Open Host Service (OHS)** | Upstream offers one well-defined API for all consumers. | Many downstreams need the same thing. |
-| **Published Language (PL)** | A documented, versioned exchange format (event schema, JSON schema). | Usually together with OHS or events. |
+| **Published Language (PL)** | A documented, versioned exchange format (event schema, JSON schema, or an industry standard). | Usually together with OHS or events. |
 | **Separate Ways** | No integration at all. | The cost of integrating is higher than the benefit. |
 
-## Kestrel Supply's context map
+## Northlane's context map
 
 ```mermaid
 flowchart LR
-    CAT["Catalog"]
-    ORD["Ordering"]
-    FUL["Fulfilment<br/>CORE"]
-    INV["Inventory"]
-    PAY["Payments"]
-    SHP["Shipping"]
+    ATS[("Applicant tracking<br/>vendor")]
+    EMP["Employee Records"]
+    LEA["Leave<br/>CORE"]
+    TIM["Time Tracking"]
+    ONB["Onboarding"]
+    PAY["Payroll Integration"]
     NOT["Notifications"]
-    WMS[("WMS<br/>vendor")]
-    PSP[("Payment provider<br/>vendor")]
-    CAR[("Carrier aggregator<br/>vendor")]
-    IDP[("Identity provider<br/>vendor")]
-    SUP[("Support desk<br/>SaaS")]
+    PRV[("Payroll providers<br/>vendors")]
+    HOL[("Holiday data feed<br/>vendor")]
+    IDP[("Identity provider<br/>customer's")]
+    REV[("Review tool<br/>vendor")]
 
-    CAT -- "U: OHS / PL<br/>D: Customer" --> ORD
-    ORD <-- "Partnership<br/>Promise API + order events" --> FUL
-    INV -- "U: Supplier, OHS<br/>D: Customer" --> FUL
-    PAY -- "U: Supplier, OHS<br/>D: Customer" --> ORD
-    FUL -- "U: PL events<br/>D: Conformist" --> PAY
-    SHP -- "U: Supplier, OHS<br/>D: Customer" --> FUL
-    SHP -- "U: PL events<br/>D: Conformist" --> ORD
-    WMS -- "U: vendor<br/>D: ACL" --> FUL
-    WMS -- "U: vendor<br/>D: ACL" --> INV
-    PSP -- "U: vendor<br/>D: ACL" --> PAY
-    CAR -- "U: vendor<br/>D: ACL" --> SHP
-    IDP -. "U: vendor<br/>D: Conformist (all contexts)" .-> ORD
-    ORD -- "U: PL events<br/>D: Conformist" --> NOT
-    FUL -- "U: PL events<br/>D: Conformist" --> NOT
-    SUP ~~~ ORD
+    ATS -- "U: vendor<br/>D: ACL" --> EMP
+    EMP -- "U: Supplier, OHS / PL<br/>D: Customer" --> LEA
+    HOL -- "U: vendor<br/>D: ACL" --> LEA
+    LEA <-- "Partnership<br/>leave on timesheets + overtime" --> TIM
+    EMP -- "U: PL events<br/>D: Conformist" --> ONB
+    EMP -- "U: PL events<br/>D: Conformist" --> PAY
+    LEA -- "U: PL events<br/>D: Conformist" --> PAY
+    TIM -- "U: PL events<br/>D: Conformist" --> PAY
+    PRV -- "U: provider formats<br/>D: ACL" --> PAY
+    IDP -- "U: SCIM / OIDC (PL)<br/>D: Conformist" --> EMP
+    LEA -- "U: PL events<br/>D: Conformist" --> NOT
+    EMP -- "U: PL events<br/>D: Conformist" --> NOT
+    REV ~~~ EMP
 
-    style FUL fill:#ffd9a8,stroke:#c46a00,stroke-width:3px
+    style LEA fill:#ffd9a8,stroke:#c46a00,stroke-width:3px
 ```
 
-Arrows point from upstream to downstream. The Support desk has no arrow on purpose: it is Separate Ways (see below).
+Arrows point from upstream to downstream, which is not always the direction data flows. The review tool has no arrow on purpose: it is Separate Ways (see below).
 
 ## Each relationship, and why
 
-### Catalog → Ordering: Open Host Service + Published Language, Customer/Supplier
+### Employee Records → Leave: Customer/Supplier with Open Host Service and Published Language
 
-Catalog publishes a product and price API that any context can use. Ordering calls it while the shopper browses and, **at checkout, copies the product name, SKU and unit price into the order line**. After that, the order never looks at Catalog again.
+Employee Records publishes `EmployeeHired`, `EmploymentTermsChanged`, `EmployeeTransferred` and `EmploymentTerminated` as versioned events. Leave is its most important customer: when Leave needs a new field (say, the employee's region, because Spanish public holidays differ between Madrid and Catalonia), the Core HR team prioritises it.
 
-*Why copy instead of referencing?* An order is a legal record of what the customer agreed to pay. If a merchandiser changes the price tomorrow, yesterday's order must not change. Copying a snapshot is not duplication; it is a different fact ("the price *we agreed* on") from Catalog's fact ("the price *today*").
+Leave **keeps its own copy** of the few facts it needs: country and region, working pattern, reporting line, start and end dates. It does not call Employee Records every time it calculates a deduction.
 
-### Ordering ⇄ Fulfilment: Partnership
+*Why copy instead of calling?* Three reasons. Leave keeps working when Employee Records is down. Leave needs the facts *as they were on a given date* (effective-dated), shaped for its own calculations. And Leave never needs the employee's home address or salary, so it never holds them (see [D9](06-design-decisions.md#d9-personal-data-lives-in-one-place)).
 
-This is the most important relationship, and the only Partnership on the map. It has two directions:
+### Leave ⇄ Time Tracking: Partnership
 
-- **At checkout (synchronous):** Ordering asks Fulfilment's **Promise API** "when can these lines reach this postcode?" Fulfilment returns a `DeliveryPromise` quote valid for 20 minutes. Here Fulfilment is upstream.
-- **After checkout (asynchronous):** Ordering publishes `OrderPlaced` carrying the promise quote ID. Fulfilment turns it into a plan and later publishes `ShipmentDispatched`, `OrderBackordered`, `DeliveryPromiseBroken`. Ordering updates the customer-facing status.
+This is the only Partnership on the map, and it has two directions:
 
-*Why Partnership?* The checkout experience and the promise logic are two halves of the company's main selling point. Any change to how promises work (for example, adding evening delivery slots) changes both checkout and fulfilment at the same time. The Storefront and Fulfilment teams plan these changes together.
+- Time Tracking shows approved leave on the timesheet, so nobody is flagged as missing hours while on holiday. Here Leave is upstream.
+- When overtime is approved, Leave turns it into *time off in lieu* according to the policy. Here Time Tracking is upstream.
 
-*The risk:* a Partnership is expensive. Both teams must release in step, and a two-way dependency can turn into a distributed monolith. We contain it by keeping the contract tiny (one query, a handful of events) and versioning the event schemas. If the two teams ever stop coordinating well, the fallback is to make Fulfilment the clear upstream (OHS) and Ordering a customer.
+*Why Partnership?* Features in this area cross both contexts: hourly leave, half days, flexible working patterns. Each changes how leave is deducted and how timesheets look at the same time. The Leave and Time & Pay teams plan those changes together.
 
-### Inventory → Fulfilment: Customer/Supplier with OHS
+*The risk:* a Partnership is expensive. Both teams must release in step, and a two-way dependency can turn into a distributed monolith. We contain it by keeping the contract tiny (one query, two events) and versioning the event schemas. If the teams stop coordinating well, the fallback is to make Leave the clear upstream and Time Tracking a customer.
 
-Fulfilment asks Inventory for available-to-promise and sends reserve/release commands. Inventory is the supplier, Fulfilment the customer: when Fulfilment needs something new (say, reserved-until timestamps), Inventory's backlog takes it seriously. Same team, so this is easy in practice.
+### Applicant tracking → Employee Records: Anti-Corruption Layer
 
-### Payments → Ordering, Fulfilment → Payments
+The ATS speaks of *candidates*, *requisitions*, *offers* and *stages*, with its own IDs and custom fields per customer. None of that belongs in Employee Records. An ACL turns an accepted offer into a *pending hire* in our language: person, start date, job, country, contracted hours. If a customer switches ATS vendor, only the ACL changes.
 
-At checkout, Ordering calls Payments to **authorise** the card (Payments is supplier, Ordering customer). Card rules say we may only **capture** money when goods are dispatched, so Payments listens to Fulfilment's `ShipmentDispatched` event. For that event Payments simply **conforms** to Fulfilment's published language: it needs only an order ID and an amount, so a translation layer would add nothing.
+### Holiday data feed → Leave: Anti-Corruption Layer
 
-### Shipping → Fulfilment and Ordering
+The feed has its own codes for regions, distinguishes "observances" from real days off, and marks some holidays as half days or optional. Leave must not depend on those details. The ACL translates the feed into Leave's own `PublicHolidayCalendar`: for a region, the dates that are non-working. **The core domain is always protected by an ACL from vendors.**
 
-When a shipment is packed, Fulfilment asks Shipping to book a parcel and print a label (Customer/Supplier). Shipping later publishes `ParcelInTransit` and `ParcelDelivered`; Ordering conforms to those events to show tracking and close the order.
+### Leave, Employee Records, Time Tracking → Payroll Integration: Conformist to Published Language
 
-### WMS → Fulfilment and Inventory: Anti-Corruption Layer
+Payroll Integration listens to `SalaryChanged`, `UnpaidLeaveTaken`, `FinalLeaveBalanceSettled`, `OvertimeApproved` and others, and collects them into pay periods. It simply **conforms** to the published events: they are already designed for outside consumers, and Payroll Integration has no rich model of its own to protect.
 
-The warehouse system is a vendor product with its own vocabulary: *outbound orders*, *waves*, *LPNs* (license plate numbers), *item masters*, numeric status codes. We cannot change it, and its model is nothing like ours.
+### Payroll providers → Payroll Integration: Anti-Corruption Layer (data flows out)
 
-If Fulfilment conformed to it, the core domain would start talking about waves and status code 40. So both Fulfilment and Inventory have an **ACL**: an adapter that translates the WMS's messages into our own language at the boundary.
+Each country's payroll provider has its own import format, its own codes for pay elements ("unpaid leave" might be code `U07` for one provider and `ABS-UNP` for another) and its own rules for corrections. The providers are upstream: they will not change their formats for Northlane. Payroll Integration has one ACL adapter per provider that translates our `PayChange` into the provider's format. This is the clearest example of **"upstream" meaning model influence, not data direction**.
 
-| WMS says | Fulfilment's ACL translates to |
-|----------|--------------------------------|
-| Outbound order created, status 10 | `ShipmentReleasedToWarehouse` |
-| Status 40 (picked), short-pick on line 2 | `ShipmentPicked` + `StockShortageDetected` |
-| LPN closed, status 60 | `ShipmentPacked` |
-| Trailer departed | `ShipmentDispatched` |
+### Identity provider → Employee Records: Conformist to a standard Published Language
 
-**An ACL belongs to the downstream context it protects.** Fulfilment and Inventory each translate only what they need. There is no shared "WMS integration service" that both depend on, because that would become a second model of the warehouse.
+Customers bring their own identity provider. Northlane uses OIDC for login and SCIM (an industry-standard protocol) to create and remove user accounts when people join and leave. Both standards are Published Languages that someone else designed. Conforming to them is cheap and correct; inventing a translation would add nothing. **Conformist is a legitimate, deliberate choice** when the upstream model is good enough and does not touch your core.
 
-### Payment provider → Payments, Carrier aggregator → Shipping: ACL
+### Onboarding and Notifications: Conformist
 
-Same reasoning. These thin contexts are essentially ACLs with a stable API on top. Swapping vendors changes one context only.
+Onboarding creates a checklist when it receives `EmployeeHired`. Notifications sends messages on `LeaveRequestApproved` and others. Both need little more than an ID, a date and a name, so they conform to the published events.
 
-### Identity provider → everyone: Conformist
+### Review tool: Separate Ways
 
-All contexts accept the identity provider's tokens and use its subject ID as the `CustomerId`. Building a translation layer would cost more than it saves: we only need one ID and a few claims, and the provider's model of a user is perfectly reasonable. **Conformist is a legitimate, deliberate choice** when the upstream model is good enough and does not touch your core.
-
-### Ordering and Fulfilment → Notifications: Conformist to Published Language
-
-Notifications subscribes to other contexts' public events and sends emails. It owns templates and delivery preferences, nothing else. It conforms to the event schemas because they are already designed for outside consumers.
-
-### Support desk: Separate Ways
-
-Customer service agents use a SaaS help desk. We considered syncing orders into it. Instead, each ticket simply contains a link to the order in our back-office UI. No integration, no sync bugs, almost the same value. **Separate Ways is underused:** not every relationship needs code.
+Customers use a separate tool for performance reviews. We considered syncing review scores into Employee Records. Nobody could name a decision Northlane would make with them, so there is no integration: the review tool gets users through the customer's identity provider and that is all. **Separate Ways is underused:** not every relationship needs code.
 
 ### What is *not* on the map: Shared Kernel
 
-We have no Shared Kernel. Even something as innocent as `Money` is defined separately in each context that needs it. A shared `Money` library sounds harmless, but the moment one context needs currency conversion rules or rounding policy for invoices, every context is forced to take that change. The only things shared are the **published event schemas** (the Published Language), which are versioned contracts, not shared code.
+We have no Shared Kernel. Even something as innocent as `EmployeeId` handling or a `DateRange` value object is defined separately in each context that needs it. A shared library sounds harmless, but the moment Leave needs half-day ranges or Payroll needs pay-period rounding, every context is forced to take that change. The only things shared are the **published event schemas** (the Published Language), which are versioned contracts, not shared code.
 
 ## How to choose a pattern (decision guide)
 
 ```
-Is the other side a vendor or legacy system you cannot change?
+Is the other side a vendor, a standard, or a legacy system you cannot change?
 ├── Yes → Is its model clean and does it stay out of your core?
 │         ├── Yes → Conformist
 │         └── No  → Anti-Corruption Layer

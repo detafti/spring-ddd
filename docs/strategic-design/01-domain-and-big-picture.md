@@ -2,13 +2,15 @@
 
 Strategic design starts with the business, not with tables or services. Before drawing a single box, we need to know **how the company makes money and where it wins against competitors**, because that decides where we spend our modelling effort.
 
-## The business: Kestrel Supply
+## The business: Northlane HR
 
-Kestrel Supply sells home and kitchen goods online (around 8,000 products) and ships them from **two warehouses it runs itself** (North and South). It is not the cheapest shop in its market. Customers choose it because of one promise:
+Northlane is a fictional HR platform sold as SaaS to mid-size companies (100 to 3,000 employees) that employ people in several European countries: Germany, the Netherlands, Spain, France and the UK.
 
-> **"Order by 3 pm, and the date we show you at checkout is the date it arrives."**
+Every HR platform stores employee records. Northlane wins deals because of one promise:
 
-Kestrel shows a concrete delivery date on every product page and at checkout, and it keeps that promise more than 97% of the time. Competitors show vague ranges ("3 to 5 working days") or promise dates they miss. Marketing, repeat purchases and the company's pricing power all rest on that promise.
+> **"Every leave balance is correct and legally compliant in every country you employ people in, without a single spreadsheet."**
+
+Before Northlane, the customers' HR teams spent days each month reconciling holiday balances by hand: part-timers whose hours changed mid-year, Spanish public holidays that differ per region, German carry-over rules, Dutch statutory versus extra-statutory days that expire at different times, sick days during holidays that must be given back. Mistakes cost money and lead to legal disputes. Northlane encodes those rules, so the balance an employee sees is the balance they are legally owed.
 
 That one sentence is the most important input to everything in this module. Keep it in mind.
 
@@ -16,60 +18,65 @@ That one sentence is the most important input to everything in this module. Keep
 
 | Person | Cares about |
 |--------|-------------|
-| Shopper | Finding products, knowing exactly when they will arrive, paying safely |
-| Customer service agent | Where is an order, can it still be changed or cancelled |
-| Merchandiser | Product data, categories, prices, promotions |
-| Fulfilment planner | Which warehouse ships what, cut-off times, keeping the promise when stock is short |
-| Warehouse supervisor | Pick waves, staff, getting parcels onto the carrier truck before it leaves |
-| Finance | Payments captured correctly, refunds, invoices |
+| Employee | How many days off they have, requesting leave quickly, getting paid correctly |
+| Line manager | Approving leave without leaving the team short-staffed |
+| HR administrator | Accurate employee records, hires, contract changes, leavers |
+| HR policy owner | Configuring leave policies that comply with each country's law and the company's own extras |
+| Payroll specialist | Receiving every pay-relevant change (salary, unpaid leave, overtime) before payroll closes |
+| Recruiter | Handing a new hire over from the recruitment tool |
+| IT administrator | Accounts created on day one, removed on the last day |
 
-Notice that each of these people uses some of the same words (order, product, available, shipment) to mean different things. That is a strong hint about where boundaries will go. We come back to it in the [glossary](05-ubiquitous-language.md).
+Each of these people uses some of the same words (employee, manager, day, absence, hours) to mean different things. That is a strong hint about where boundaries will go. We come back to it in the [glossary](05-ubiquitous-language.md).
 
 ## Big-picture Event Storming
 
-Event Storming is a workshop where domain experts and developers put **domain events** (things that happened, written in the past tense) on a timeline. It is the fastest way to discover a domain without arguing about data models. Below is the result of a big-picture session, cleaned up.
+Event Storming is a workshop where domain experts and developers put **domain events** (things that happened, written in the past tense) on a timeline. It is the fastest way to discover a domain without arguing about data models. Below is the result of a big-picture session, cleaned up. It follows one employee's life at a company.
 
-### Happy path
+### Happy path: the employee lifecycle
 
 ```
-Merchandising        Shopping & checkout               Fulfilment & warehouse                              Delivery & money
-─────────────        ───────────────────               ──────────────────────                              ────────────────
-ProductPublished  →  ItemAddedToCart                →  FulfilmentPlanned                                →  ShipmentDispatched
-PriceChanged         DeliveryPromiseQuoted             StockReserved                                       PaymentCaptured
-PromotionStarted     CheckoutStarted                   ShipmentReleasedToWarehouse                         ParcelInTransit
-                     PaymentAuthorised                 ShipmentPicked                                      ParcelDelivered
-                     ★ OrderPlaced                     ShipmentPacked                                      ★ OrderCompleted
-                                                       ★ ShipmentDispatched
+Joining                         Working life                        Changes                            Leaving
+───────                         ────────────                        ───────                            ───────
+OfferAccepted (recruitment)     LeaveAccrued (monthly)              EmploymentTermsChanged             ResignationReceived
+★ EmployeeHired                 LeaveRequested                        (e.g. 5 days → 4 days a week)    ★ EmploymentTerminated
+OnboardingPlanStarted           LeaveRequestApproved                EntitlementRecalculated            FinalLeaveBalanceSettled
+ContractSigned                  ★ LeaveTaken                        EmployeeTransferred                PayChangesExported
+UserAccountProvisioned          TimesheetSubmitted                    (new manager, new team)          UserAccountDeactivated
+LeaveAccountsOpened             OvertimeApproved                    ApproverChanged
+EntitlementGranted              TimeOffInLieuAccrued                SalaryChanged
+                                ★ PayPeriodClosed                   LeaveYearClosed
+                                PayChangesExported                  BalanceCarriedOver / BalanceExpired
 ```
 
 ### Unhappy paths (where the interesting rules live)
 
 | Event | What it means | Why it matters |
 |-------|---------------|----------------|
-| `PaymentAuthorisationFailed` | Card declined at checkout | Order is never placed |
-| `StockShortageDetected` | Planned stock is missing (damaged, miscounted) | The promise is now **at risk** |
-| `FulfilmentReplanned` | Shipment moved to the other warehouse or split | The core trick that keeps the promise |
-| `DeliveryPromiseBroken` | We will miss the date we showed the customer | Customer must be told, maybe compensated |
-| `OrderBackordered` | No stock anywhere | Customer chooses to wait or cancel |
-| `CancellationRequested` | Customer wants to cancel | Only possible before the shipment is picked |
-| `CarrierMissedCollection` | Truck left without our parcels | Promise at risk again |
-| `ParcelReturned` | Customer sent it back | Refund and restock |
+| `LeaveRequestRejected` | Manager says no | The balance must not change |
+| `ApprovedLeaveCancelled` | Employee cancels holiday they already had approved | Days go back to the balance, and payroll may need a correction |
+| `SicknessReportedDuringLeave` | Employee falls ill on holiday | In many EU countries the holiday days must be **given back**. This is a legal rule, not a nice-to-have |
+| `PublicHolidayAnnounced` | A government adds a holiday after leave was approved | Approved leave that covers that date now deducts one day less |
+| `EmploymentTermsChanged` with a past effective date | HR enters a contract change late ("she went part-time last month") | Entitlement and accruals must be recalculated from that date |
+| `BalanceWentNegative` | Employee took more than they had | Allowed in some policies, forbidden in others; settled at termination |
+| `ApproverUnavailable` | Manager is on leave themselves | Who approves now? |
+| `PayPeriodClosedWithPendingChanges` | A change arrived after payroll closed | Must be carried into the next period, never lost |
 
 ### Pivotal events
 
 Some events mark a hand-over where **the language and the people change**. These are called pivotal events (marked ★ above), and they are the best early clue for boundaries:
 
-- **`OrderPlaced`**: before it, we talk about carts, prices and checkout with the shopper. After it, we talk about warehouses, stock and shipments with planners.
-- **`ShipmentDispatched`**: before it, the parcel is ours and inside our warehouse. After it, the carrier owns the movement, and Finance captures the payment.
-- **`OrderCompleted`**: the commitment to the customer is closed.
+- **`EmployeeHired`**: before it, recruiters talk about candidates and offers. After it, HR talks about employees, contracts and start dates.
+- **`LeaveTaken`**: once the leave dates pass, the request is no longer a plan. It becomes a fact that payroll and time tracking care about.
+- **`PayPeriodClosed`**: after it, changes for that month cannot go into that month's pay.
+- **`EmploymentTerminated`**: the end of the employment triggers settlements in several areas, each with its own rules.
 
 ### Hotspots (open questions raised during the session)
 
 Event Storming marks disagreements and unknowns as hotspots. These were the important ones, and the answers shaped the design:
 
-1. **"Who decides whether an order can be cancelled?"** Ordering knows the customer wants to cancel, but only Fulfilment knows whether the shipment has already been picked. Answer: Ordering *requests* cancellation, Fulfilment *decides*. See [decisions](06-design-decisions.md#d6-cancellation-is-a-request-not-a-command).
-2. **"Is a product 'available' when it is in stock?"** Merchandisers, planners and warehouse staff all said yes and all meant different things. See the glossary.
-3. **"Where is the delivery date calculated?"** It is shown in the shop but depends on stock, warehouse cut-offs and carrier schedules. Answer: Fulfilment calculates it, Ordering displays it.
-4. **"Do we capture payment at checkout or at dispatch?"** Card rules say capture at dispatch. So Payments listens to `ShipmentDispatched`.
+1. **"When someone goes part-time, who decides what happens to their holiday?"** HR records the contract change, but only the leave policy knows how to pro-rate entitlement. Answer: Employee Records publishes the change, Leave recalculates. See [decisions](06-design-decisions.md#d6-when-a-rule-needs-another-contexts-data-let-the-owner-decide).
+2. **"Is a 'day' of leave eight hours?"** Policy owners, payroll and time tracking all said yes and all meant different things. See the glossary.
+3. **"Who is the approver?"** The line manager in the org chart, except when they are absent, or when the policy says HR approves long leave. Answer: Leave owns the approval rules and keeps its own copy of the reporting line.
+4. **"Can we change a balance by editing a number?"** HR administrators asked for it. Employment lawyers said every change must be explainable in a dispute. Answer: balances are a ledger. See [D5](06-design-decisions.md#d5-leave-balances-are-a-ledger-not-a-number).
 
 Next: [classify the subdomains](02-subdomains.md).

@@ -2,30 +2,30 @@
 
 Reading strategic design is easy; doing it is not. These exercises force the decisions. Write your answers down before reading the hints.
 
-## Exercises on Kestrel Supply
+## Exercises on Northlane HR
 
-**E1. Strategy shift.** Kestrel's board decides to open a marketplace where third-party sellers ship their own products. Which subdomains change type? Is there a new core domain?
-
-<details><summary>Hint</summary>
-
-Seller onboarding and seller performance (are sellers keeping *Kestrel's* promise?) may become core, because the brand promise now depends on people outside the company. Fulfilment's sourcing now includes "warehouse" = seller, so its model has to generalise. Payments gets more complex (split payouts) but is still generic: marketplace payment products exist.
-</details>
-
-**E2. A new word.** Warehouse staff start talking about "priority orders" that get picked first. Which context does this term belong to? Does Ordering need to know about it?
+**E1. Strategy shift.** Northlane's board decides to run payroll itself in the Netherlands instead of sending changes to providers. Which subdomains change type? What happens to the Payroll Integration context?
 
 <details><summary>Hint</summary>
 
-Picking order is the WMS's business, but *deciding* that a shipment is a priority (because its promise is at risk) is a Fulfilment decision. Fulfilment sends a priority flag through its ACL; the WMS uses its own concept for it. Ordering does not need to know at all.
+Dutch payroll becomes a new subdomain Northlane builds. Is it core? Only if Northlane plans to win deals with it; if it is just to reduce costs, it is supporting, and buying a payroll engine may still be smarter. Payroll Integration keeps existing for the other countries, and a new Payroll context appears for the Netherlands, downstream of the same events. Notice that the published events did not have to change: that is the payoff of a good Published Language.
 </details>
 
-**E3. The tempting shortcut.** A developer suggests Ordering should read Inventory's table directly to show "only 2 left!" on the product page, because it is faster. What is wrong, and what would you do instead?
+**E2. A new word.** Policy owners start talking about "blackout periods": dates when nobody in a team may take leave (for example, year-end closing in Finance). Which context owns this concept? Does Employee Records need to know about it?
 
 <details><summary>Hint</summary>
 
-It couples Ordering to Inventory's schema, bypasses Inventory's definition of available-to-promise, and breaks the "contexts talk through APIs or events" rule (D10). Options: Inventory's availability API (OHS), or a read model in Catalog/Ordering updated from Inventory events. Also ask the business which number they actually want to show: on hand or ATP?
+It is an approval rule, so it belongs to Leave, probably as part of the policy or the approval route. Leave needs to know which team someone is in, which it already has from its copy of the reporting line or org unit. Employee Records does not need to know blackout periods exist.
 </details>
 
-**E4. Draw the Returns process.** Customers can return items within 30 days. Run a mini Event Storming on paper: what are the events? Is Returns a new context, part of Fulfilment, or part of Ordering? What are the relationships?
+**E3. The tempting shortcut.** A developer suggests that Payroll Integration should read Leave's ledger table directly to calculate the leave payout at termination, "because it's just a sum". What is wrong, and what would you do instead?
+
+<details><summary>Hint</summary>
+
+It couples Payroll Integration to Leave's schema, and it copies a rule (how to value unused leave, which depends on policy and country) into the wrong context. See [D6](06-design-decisions.md#d6-when-a-rule-needs-another-contexts-data-let-the-owner-decide): Leave settles and publishes `FinalLeaveBalanceSettled` with the result; Payroll Integration forwards it.
+</details>
+
+**E4. Run a mini Event Storming on sickness.** Employees report sick, sometimes with a doctor's note, sometimes for weeks, sometimes during approved leave. Some countries pay sick days differently after a certain number of days. What are the events? Is sickness part of Leave, or a new context? What are its relationships, and how do you handle the fact that sickness details are sensitive health data?
 
 **E5. Challenge a decision.** Pick one decision from [06-design-decisions.md](06-design-decisions.md) and argue for the opposite choice. Under what business conditions would the opposite be correct?
 
@@ -52,7 +52,7 @@ Use this on a real system (module 4 does exactly this). It works for new systems
 - [ ] Inside each context, does every important term have exactly one meaning?
 - [ ] Does each context have a "does not own" list?
 - [ ] Is each context owned by exactly one team?
-- [ ] Is there a "God entity" (an `Order`, `Customer` or `Product` class with fields from many teams)? If yes, that is your first split.
+- [ ] Is there a "God entity" (an `Employee`, `Order` or `Customer` class with fields from many teams)? If yes, that is your first split.
 - [ ] Did you write down the alternatives you rejected, and why?
 
 ### Context map
